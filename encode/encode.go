@@ -1,6 +1,8 @@
 package encode
 
-import "io"
+import (
+	"io"
+)
 
 // 考虑到客户端的一次RPC请求，其中包括服务名，方法名，参数
 // 服务端返回返回值和error
@@ -18,4 +20,24 @@ type Encoder interface {
 	ReadHeader(*Header) error
 	ReadBody(interface{}) error
 	Write(*Header, interface{}) error
+}
+
+// 定义编码函数，函数接收一个接口
+type NewEncodeFun func(closer io.ReadWriteCloser) Encoder
+
+type Type string
+
+const (
+	GobType  Type = "application/gob"
+	JsonType Type = "application/json"
+)
+
+// 定义一个map，可以通过不同的Type（编码方式）返回构造函数
+var EncodeFunMap map[Type]NewEncodeFun
+
+func init() {
+	// 为map开个空间，否则不能往里存东西
+	EncodeFunMap = make(map[Type]NewEncodeFun)
+	// 为Gob方法存一个构造函数进来
+	EncodeFunMap[GobType] = NewGobEncoder
 }
