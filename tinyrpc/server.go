@@ -1,8 +1,12 @@
 package tinyrpc
 
 import (
+	"encoding/json"
+	"io"
 	"log"
 	"net"
+	"reflect"
+	"sync"
 	"tinyRPCFramwork/encode"
 )
 
@@ -43,13 +47,57 @@ func (server *Server) Accept(listen net.Listener) {
 			return
 		}
 		// 开一个协程去处理当前的连接
-		go server.ServeConn(conn)
+		go server.ServerConn(conn)
 	}
 }
 
 func Accept(listen net.Listener) { DefaultServer.Accept(listen) }
 
 // 处理请求
-func (server *Server) ServerConn(conn *net.Conn) {
+func (server *Server) ServerConn(conn io.ReadWriteCloser) {
+	// 最后关闭连接
+	defer func() { _ = conn.Close() }()
 
+	// 定义一个对象接收json包的解码结果
+	var opt Option
+	if err := json.NewDecoder(conn).Decode(&opt); err != nil {
+		log.Println("rpc err: Option decode error", err)
+		return
+	}
+	// 取出对应编码方式的结构体构造函数
+	f := encode.EncodeFunMap[opt.EncodeType]
+	if f == nil {
+		log.Println("rpc err: invalid encode type", opt.EncodeType)
+		return
+	}
+	server.serveEncode(f(conn))
+}
+
+var invalidRequest = struct{}{}
+
+func (server *Server) serveEncode(encoder *encode.Encoder) {
+	// 制定一个锁，确保发送一个完整的response
+	sending := new(sync.Mutex)
+	// 等待所有请求处理完
+	wg := new(sync.WaitGroup)
+	for {
+		req, err := server.readRequest(encoder)
+		if err != nil {
+			if req == nil {
+				break
+			}
+			req.H.Error = err.Error()
+			server.sendRequest(encoder, req.H, invalidRequest, sending)
+			continue
+		}
+		wg.Add(1)
+		go server.handleRequest(encoder, req, sending, wg)
+	}
+	wg.Wait()
+	_ = encoder.Close()
+}
+
+type request struct {
+	h            *encode.Header
+	argv, replyv reflect.Value
 }
