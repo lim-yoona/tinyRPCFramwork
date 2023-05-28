@@ -2,14 +2,23 @@ package irpc
 
 import (
 	"io"
-	"tinyRPCFramwork/code"
 )
+
+// message header
+type Header struct {
+	// service method name
+	ServiceMethod string
+	// message seq
+	Seq uint64
+	// 返回的错误信息
+	Error error
+}
 
 type ICode interface {
 	io.Closer
-	ReadHeader(header *code.Header) error
+	ReadHeader(header *Header) error
 	ReadBody(interface{}) error
-	Write(*code.Header, interface{}) error
+	Write(*Header, interface{}) error
 }
 type NewCodeFunc func(closer io.ReadWriteCloser) ICode
 type Type string
@@ -20,8 +29,3 @@ const (
 )
 
 var NewCodeFuncMap map[Type]NewCodeFunc
-
-func init() {
-	NewCodeFuncMap := make(map[Type]NewCodeFunc)
-	NewCodeFuncMap[GobType] = code.NewGobCode
-}

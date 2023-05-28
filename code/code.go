@@ -8,16 +8,6 @@ import (
 	"tinyRPCFramwork/irpc"
 )
 
-// message header
-type Header struct {
-	// service method name
-	ServiceMethod string
-	// message seq
-	Seq uint64
-	// 返回的错误信息
-	Error error
-}
-
 type GobCode struct {
 	// 得到的链接实例
 	conn io.ReadWriteCloser
@@ -40,29 +30,35 @@ func NewGobCode(conn io.ReadWriteCloser) irpc.ICode {
 		enc:  gob.NewEncoder(buf),
 	}
 }
-func (gc *GobCode) ReadHeader(header *Header) error {
+func (gc *GobCode) ReadHeader(header *irpc.Header) error {
 	return gc.dec.Decode(header)
 }
 func (gc *GobCode) ReadBody(body interface{}) error {
 	return gc.dec.Decode(body)
 }
-func (gc *GobCode) Write(header *Header, body interface{}) (err error) {
+func (gc *GobCode) Write(header *irpc.Header, body interface{}) (err error) {
 	defer func() {
 		_ = gc.buf.Flush()
 		if err != nil {
 			gc.Close()
 		}
 	}()
-	if err := gc.enc.Encode(header); err != nil {
-		fmt.Println("Header Writer encode err", err)
+	err = gc.enc.Encode(header)
+	if err != nil {
+		fmt.Println("Header Writer encode err: ", err)
 		return err
 	}
-	if err := gc.enc.Encode(body); err != nil {
-		fmt.Println("Body Writer encode err", err)
+	err = gc.enc.Encode(body)
+	if err != nil {
+		fmt.Println("Body Writer encode err: ", err)
 		return err
 	}
 	return nil
 }
 func (gc *GobCode) Close() error {
 	return gc.conn.Close()
+}
+func init() {
+	irpc.NewCodeFuncMap = make(map[irpc.Type]irpc.NewCodeFunc)
+	irpc.NewCodeFuncMap[irpc.GobType] = NewGobCode
 }

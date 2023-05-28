@@ -8,7 +8,6 @@ import (
 	"net"
 	"reflect"
 	"sync"
-	"tinyRPCFramwork/code"
 	"tinyRPCFramwork/irpc"
 )
 
@@ -28,7 +27,7 @@ var DefaultOption = &Option{
 }
 
 type request struct {
-	h           *code.Header
+	h           *irpc.Header
 	argv, reply reflect.Value
 }
 
@@ -66,7 +65,6 @@ func (s *Server) ServeConn(conn net.Conn) {
 		fmt.Println("invalid MarkedDiyrpc")
 		return
 	}
-	// fs是一个
 	f := irpc.NewCodeFuncMap[opt.CodeType]
 	if f == nil {
 		log.Println("[rpc server]: invaild code type!", opt.CodeType)
@@ -114,7 +112,7 @@ func (s *Server) readRequest(code irpc.ICode) (*request, error) {
 	return req, nil
 }
 
-func (s *Server) sendResponse(code irpc.ICode, h *code.Header, body interface{}, sending *sync.Mutex) {
+func (s *Server) sendResponse(code irpc.ICode, h *irpc.Header, body interface{}, sending *sync.Mutex) {
 	sending.Lock()
 	defer sending.Unlock()
 	if err := code.Write(h, body); err != nil {
@@ -130,8 +128,8 @@ func (s *Server) handleRequest(code irpc.ICode, req *request, sending *sync.Mute
 	s.sendResponse(code, req.h, req.reply.Interface(), sending)
 
 }
-func (s *Server) readRequestHeader(iCode irpc.ICode) (*code.Header, error) {
-	var h code.Header
+func (s *Server) readRequestHeader(iCode irpc.ICode) (*irpc.Header, error) {
+	var h irpc.Header
 	if err := iCode.ReadHeader(&h); err != nil {
 		if err != io.EOF && err != io.ErrUnexpectedEOF {
 			log.Println("[rpc server]: read header error:", err)
