@@ -58,11 +58,11 @@ func (s *Server) ServeConn(conn net.Conn) {
 	defer func() { conn.Close() }()
 	var opt Option
 	if err := json.NewDecoder(conn).Decode(&opt); err != nil {
-		fmt.Println("json.NewDecoder(conn).Decode err", err)
+		log.Println("json.NewDecoder(conn).Decode err", err)
 		return
 	}
 	if opt.MarkedDiyrpc != MarkDiyrpc {
-		fmt.Println("invalid MarkedDiyrpc")
+		log.Println("invalid MarkedDiyrpc")
 		return
 	}
 	f := irpc.NewCodeFuncMap[opt.CodeType]
