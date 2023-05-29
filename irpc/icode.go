@@ -11,7 +11,7 @@ type Header struct {
 	// message seq
 	Seq uint64
 	// 返回的错误信息
-	Error error
+	Error string
 }
 
 type ICode interface {

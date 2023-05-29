@@ -84,7 +84,9 @@ func (s *Server) serveCode(code irpc.ICode) {
 			if req == nil {
 				break
 			}
-			req.h.Error = err
+			// 如果读Header出错
+			// 给客户端返回一个头中包含错误信息的消息
+			req.h.Error = err.Error()
 			s.sendResponse(code, req.h, invalidRequest, mu)
 			continue
 		}
