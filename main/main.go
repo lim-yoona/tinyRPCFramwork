@@ -1,14 +1,14 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
+	client2 "tinyRPCFramwork/client"
 	"tinyRPCFramwork/code"
 	"tinyRPCFramwork/diyrpc"
-	"tinyRPCFramwork/irpc"
 )
 
 func startServe(addr chan string) {
@@ -23,24 +23,34 @@ func startServe(addr chan string) {
 }
 
 func main() {
+	code.Init()
+	log.SetFlags(0)
+
 	addr := make(chan string)
 	go startServe(addr)
 
-	conn, _ := net.Dial("tcp", <-addr)
-	defer func() { _ = conn.Close() }()
+	client, err := client2.Dial("tcp", <-addr)
+	if err != nil {
+		log.Println("main Dial err:", err)
+		return
+	}
+	defer func() {
+		client.Close()
+	}()
 
 	time.Sleep(time.Second)
-	_ = json.NewEncoder(conn).Encode(diyrpc.DefaultOption)
-	codec := code.NewGobCode(conn)
+	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		h := &irpc.Header{
-			ServiceMethod: "Foo.Sum",
-			Seq:           uint64(i),
-		}
-		codec.Write(h, fmt.Sprintf("rpc req %d", h.Seq))
-		codec.ReadHeader(h)
-		var reply string
-		codec.ReadBody(&reply)
-		fmt.Println("reply:", reply)
+		wg.Add(1)
+		go func(int2 int) {
+			defer wg.Done()
+			args := fmt.Sprintf("rpc req %d", i)
+			var reply string
+			if err := client.Call("Foo", args, &reply); err != nil {
+				log.Println("[main] client Call err:", err)
+			}
+			log.Println("reply:", reply)
+		}(i)
 	}
+	wg.Wait()
 }

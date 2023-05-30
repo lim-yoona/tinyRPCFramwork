@@ -135,7 +135,8 @@ func newClientCode(cc irpc.ICode, opt *diyrpc.Option) *Client {
 func newClient(conn net.Conn, opt *diyrpc.Option) (*Client, error) {
 	f := irpc.NewCodeFuncMap[opt.CodeType]
 	if f == nil {
-		err := fmt.Errorf("[Client] Invaild CodeType", opt.CodeType)
+		err := fmt.Errorf("[Client] Invaild CodeType: ", opt.CodeType)
+		//log.Println(opt.CodeType)
 		log.Println("[Client] NewCodeFuncMap err:", err)
 		conn.Close()
 		return nil, err
@@ -146,4 +147,81 @@ func newClient(conn net.Conn, opt *diyrpc.Option) (*Client, error) {
 		return nil, err
 	}
 	return newClientCode(f(conn), opt), nil
+}
+
+// 设置opts为可选参数
+func parseOptions(opts ...*diyrpc.Option) (*diyrpc.Option, error) {
+	if len(opts) == 0 || opts[0] == nil {
+		return diyrpc.DefaultOption, nil
+	}
+	if len(opts) != 1 {
+		return nil, errors.New("The number of options is more than 1")
+	}
+	opt := opts[0]
+	opt.MarkedDiyrpc = diyrpc.DefaultOption.MarkedDiyrpc
+	if opt.CodeType == "" {
+		opt.CodeType = diyrpc.DefaultOption.CodeType
+	}
+	// for test
+	opt.CodeType = irpc.GobType
+	return opt, nil
+}
+func Dial(network, address string, opts ...*diyrpc.Option) (client *Client, err error) {
+	opt, err := parseOptions(opts...)
+	if err != nil {
+		log.Println("[Client] parseOptions err:", err)
+		return nil, err
+	}
+	conn, err := net.Dial(network, address)
+	if err != nil {
+		log.Println("[Client] net.Dial err:", err)
+		return nil, err
+	}
+	defer func() {
+		if client == nil {
+			conn.Close()
+		}
+	}()
+	return newClient(conn, opt)
+}
+func (c *Client) send(call *Call) {
+	c.sending.Lock()
+	defer c.sending.Unlock()
+
+	seq, err := c.registerCall(call)
+	if err != nil {
+		log.Println("[Client] registerCall err:", err)
+		call.Error = err
+		call.done()
+		return
+	}
+	c.header.ServiceMethod = call.ServiceMethod
+	c.header.Seq = seq
+	c.header.Error = ""
+	if err := c.cc.Write(&c.header, call.Args); err != nil {
+		call := c.removeCall(seq)
+		if call != nil {
+			call.Error = err
+			call.done()
+		}
+	}
+}
+func (c *Client) Go(serviceMethod string, args, reply interface{}, done chan *Call) *Call {
+	if done == nil {
+		done = make(chan *Call, 10)
+	} else if cap(done) == 0 {
+		log.Panic("[Client] done channel unbuffered")
+	}
+	call := &Call{
+		ServiceMethod: serviceMethod,
+		Args:          args,
+		reply:         reply,
+		Done:          done,
+	}
+	c.send(call)
+	return call
+}
+func (c *Client) Call(serviceMethod string, args, reply interface{}) error {
+	call := <-c.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
+	return call.Error
 }

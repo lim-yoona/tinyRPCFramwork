@@ -58,7 +58,7 @@ func (gc *GobCode) Write(header *irpc.Header, body interface{}) (err error) {
 func (gc *GobCode) Close() error {
 	return gc.conn.Close()
 }
-func init() {
+func Init() {
 	irpc.NewCodeFuncMap = make(map[irpc.Type]irpc.NewCodeFunc)
 	irpc.NewCodeFuncMap[irpc.GobType] = NewGobCode
 }
