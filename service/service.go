@@ -8,17 +8,17 @@ import (
 )
 
 // 通过反射实现结构体与服务的映射关系
-type methodType struct {
-	method    reflect.Method
+type MethodType struct {
+	Method    reflect.Method
 	ArgType   reflect.Type
 	ReplyType reflect.Type
 	numCalls  uint64
 }
 
-func (mt *methodType) NumCalls() uint64 {
+func (mt *MethodType) NumCalls() uint64 {
 	return atomic.LoadUint64(&mt.numCalls)
 }
-func (mt *methodType) newArgv() reflect.Value {
+func (mt *MethodType) NewArgv() reflect.Value {
 	var argv reflect.Value
 	if mt.ArgType.Kind() == reflect.Ptr {
 		argv = reflect.New(mt.ArgType.Elem())
@@ -27,7 +27,7 @@ func (mt *methodType) newArgv() reflect.Value {
 	}
 	return argv
 }
-func (mt *methodType) newReply() reflect.Value {
+func (mt *MethodType) NewReply() reflect.Value {
 	replyv := reflect.New(mt.ReplyType.Elem())
 	switch mt.ReplyType.Kind() {
 	case reflect.Map:
@@ -38,15 +38,15 @@ func (mt *methodType) newReply() reflect.Value {
 	return replyv
 }
 
-type service struct {
+type Service struct {
 	Name   string
 	typ    reflect.Type
 	rcvr   reflect.Value
-	method map[string]*methodType
+	Method map[string]*MethodType
 }
 
-func NewService(rcvr interface{}) *service {
-	s := new(service)
+func NewService(rcvr interface{}) *Service {
+	s := new(Service)
 	s.rcvr = reflect.ValueOf(rcvr)
 	s.Name = reflect.Indirect(s.rcvr).Type().Name()
 	s.typ = reflect.TypeOf(rcvr)
@@ -56,8 +56,8 @@ func NewService(rcvr interface{}) *service {
 	s.registerMethods()
 	return s
 }
-func (s *service) registerMethods() {
-	s.method = make(map[string]*methodType)
+func (s *Service) registerMethods() {
+	s.Method = make(map[string]*MethodType)
 	for i := 0; i < s.typ.NumMethod(); i++ {
 		method := s.typ.Method(i)
 		mType := method.Type
@@ -71,8 +71,8 @@ func (s *service) registerMethods() {
 		if !isExportedOrBuildinType(argType) || !isExportedOrBuildinType(replyType) {
 			continue
 		}
-		s.method[method.Name] = &methodType{
-			method:    method,
+		s.Method[method.Name] = &MethodType{
+			Method:    method,
 			ArgType:   argType,
 			ReplyType: replyType,
 		}
@@ -83,10 +83,10 @@ func isExportedOrBuildinType(t reflect.Type) bool {
 	return ast.IsExported(t.Name()) || t.PkgPath() == ""
 }
 
-func (s *service) Call(mt *methodType, argv, replyv reflect.Value) error {
+func (s *Service) Call(mt *MethodType, argv, replyv reflect.Value) error {
 	// 被调用，调用次数+1
 	atomic.AddUint64(&mt.numCalls, 1)
-	f := mt.method.Func
+	f := mt.Method.Func
 	returnV := f.Call([]reflect.Value{s.rcvr, argv, replyv})
 	if errInter := returnV[0].Interface(); errInter != nil {
 		return errInter.(error)
