@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sync"
 	"tinyRPCFramwork/irpc"
+	"tinyRPCFramwork/service"
 )
 
 const MarkDiyrpc = 0x3bef5c
@@ -34,7 +35,9 @@ type request struct {
 // 采用json编码option，拿到option中的编码方式之后
 // 用那种编码来编码body
 
-type Server struct{}
+type Server struct {
+	serviceMap sync.Map
+}
 
 func NewServer() irpc.IServer {
 	return &Server{}
@@ -139,4 +142,11 @@ func (s *Server) readRequestHeader(iCode irpc.ICode) (*irpc.Header, error) {
 		return nil, err
 	}
 	return &h, nil
+}
+
+func (s *Server) Register(rcvr interface{}) error {
+	service := service.NewService(rcvr)
+	if _, dup := s.serviceMap.LoadOrStore(service.Name, s); dup {
+
+	}
 }

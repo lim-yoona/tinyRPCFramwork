@@ -39,7 +39,7 @@ func (mt *methodType) newReply() reflect.Value {
 }
 
 type service struct {
-	name   string
+	Name   string
 	typ    reflect.Type
 	rcvr   reflect.Value
 	method map[string]*methodType
@@ -48,14 +48,48 @@ type service struct {
 func NewService(rcvr interface{}) *service {
 	s := new(service)
 	s.rcvr = reflect.ValueOf(rcvr)
-	s.name = reflect.Indirect(s.rcvr).Type().Name()
+	s.Name = reflect.Indirect(s.rcvr).Type().Name()
 	s.typ = reflect.TypeOf(rcvr)
-	if !ast.IsExported(s.name) {
-		log.Fatalf("rpc server: %s is not a valid service name", s.name)
+	if !ast.IsExported(s.Name) {
+		log.Fatalf("rpc server: %s is not a valid service name", s.Name)
 	}
 	s.registerMethods()
 	return s
 }
 func (s *service) registerMethods() {
-	
+	s.method = make(map[string]*methodType)
+	for i := 0; i < s.typ.NumMethod(); i++ {
+		method := s.typ.Method(i)
+		mType := method.Type
+		if mType.NumIn() != 3 || mType.NumOut() != 1 {
+			continue
+		}
+		if mType.Out(0) != reflect.TypeOf((*error)(nil)).Elem() {
+			continue
+		}
+		argType, replyType := mType.In(1), mType.In(2)
+		if !isExportedOrBuildinType(argType) || !isExportedOrBuildinType(replyType) {
+			continue
+		}
+		s.method[method.Name] = &methodType{
+			method:    method,
+			ArgType:   argType,
+			ReplyType: replyType,
+		}
+		log.Printf("[rpc server] register %s.%s\n", s.Name, method.Name)
+	}
+}
+func isExportedOrBuildinType(t reflect.Type) bool {
+	return ast.IsExported(t.Name()) || t.PkgPath() == ""
+}
+
+func (s *service) Call(mt *methodType, argv, replyv reflect.Value) error {
+	// 被调用，调用次数+1
+	atomic.AddUint64(&mt.numCalls, 1)
+	f := mt.method.Func
+	returnV := f.Call([]reflect.Value{s.rcvr, argv, replyv})
+	if errInter := returnV[0].Interface(); errInter != nil {
+		return errInter.(error)
+	}
+	return nil
 }
