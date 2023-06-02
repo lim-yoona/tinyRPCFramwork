@@ -1,12 +1,14 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"sync"
+	"time"
 	"tinyRPCFramwork/diyrpc"
 	"tinyRPCFramwork/irpc"
 )
@@ -36,6 +38,46 @@ type Client struct {
 	pending  map[uint64]*Call
 	closing  bool
 	shutdown bool
+}
+
+type clientResult struct {
+	client *Client
+	err    error
+}
+type newClientFunc func(conn net.Conn, opt *diyrpc.Option) (client *Client, err error)
+
+func dialTimeout(f newClientFunc, network, address string, opts ...*diyrpc.Option) (client *Client, err error) {
+	opt, err := parseOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := net.DialTimeout(network, address, opt.ConnectionTimeout)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			conn.Close()
+		}
+	}()
+	ch := make(chan clientResult)
+	go func() {
+		client, err := f(conn, opt)
+		ch <- clientResult{
+			client: client,
+			err:    err,
+		}
+	}()
+	if opt.ConnectionTimeout == 0 {
+		result := <-ch
+		return result.client, result.err
+	}
+	select {
+	case <-time.After(opt.ConnectionTimeout):
+		return nil, fmt.Errorf("[rpc client] connect create timeout:expect within %s", opt.ConnectionTimeout)
+	case result := <-ch:
+		return result.client, result.err
+	}
 }
 
 func (c *Client) Close() error {
@@ -167,22 +209,24 @@ func parseOptions(opts ...*diyrpc.Option) (*diyrpc.Option, error) {
 	return opt, nil
 }
 func Dial(network, address string, opts ...*diyrpc.Option) (client *Client, err error) {
-	opt, err := parseOptions(opts...)
-	if err != nil {
-		log.Println("[Client] parseOptions err:", err)
-		return nil, err
-	}
-	conn, err := net.Dial(network, address)
-	if err != nil {
-		log.Println("[Client] net.Dial err:", err)
-		return nil, err
-	}
-	defer func() {
-		if client == nil {
-			conn.Close()
-		}
-	}()
-	return newClient(conn, opt)
+	//opt, err := parseOptions(opts...)
+	//if err != nil {
+	//	log.Println("[Client] parseOptions err:", err)
+	//	return nil, err
+	//}
+	//conn, err := net.Dial(network, address)
+	//if err != nil {
+	//	log.Println("[Client] net.Dial err:", err)
+	//	return nil, err
+	//}
+	//defer func() {
+	//	if client == nil {
+	//		conn.Close()
+	//	}
+	//}()
+	//return newClient(conn, opt)
+
+	return dialTimeout(newClient, network, address, opts...)
 }
 func (c *Client) send(call *Call) {
 	c.sending.Lock()
@@ -221,7 +265,13 @@ func (c *Client) Go(serviceMethod string, args, reply interface{}, done chan *Ca
 	c.send(call)
 	return call
 }
-func (c *Client) Call(serviceMethod string, args, reply interface{}) error {
+func (c *Client) Call(ctx context.Context, serviceMethod string, args, reply interface{}) error {
 	call := <-c.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
-	return call.Error
+	select {
+	case <-ctx.Done():
+		c.removeCall(call.Seq)
+		return errors.New("[rpc client] call failed")
+	case call := <-call.Done:
+		return call.Error
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 	"tinyRPCFramwork/irpc"
 	"tinyRPCFramwork/service"
 )
@@ -17,15 +18,18 @@ const MarkDiyrpc = 0x3bef5c
 
 type Option struct {
 	// 标记这是一本rpc消息
-	MarkedDiyrpc int
-	CodeType     irpc.Type
+	MarkedDiyrpc      int
+	CodeType          irpc.Type
+	ConnectionTimeout time.Duration
+	HandleTimeout     time.Duration
 }
 
 var invalidRequest = struct{}{}
 
 var DefaultOption = &Option{
-	MarkedDiyrpc: MarkDiyrpc,
-	CodeType:     irpc.GobType,
+	MarkedDiyrpc:      MarkDiyrpc,
+	CodeType:          irpc.GobType,
+	ConnectionTimeout: time.Second * 10,
 }
 
 type request struct {
