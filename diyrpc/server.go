@@ -3,6 +3,7 @@ package diyrpc
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -101,7 +102,7 @@ func (s *Server) serveCode(code irpc.ICode) {
 			continue
 		}
 		wg.Add(1)
-		go s.handleRequest(code, req, mu, wg)
+		go s.handleRequest(code, req, mu, wg, time.Second*5)
 	}
 	wg.Wait()
 	code.Close()
@@ -142,15 +143,34 @@ func (s *Server) sendResponse(code irpc.ICode, h *irpc.Header, body interface{},
 		log.Println("[rpc server]: write response err:", err)
 	}
 }
-func (s *Server) handleRequest(code irpc.ICode, req *request, sending *sync.Mutex, wg *sync.WaitGroup) {
+func (s *Server) handleRequest(code irpc.ICode, req *request, sending *sync.Mutex, wg *sync.WaitGroup, timeout time.Duration) {
 	defer wg.Done()
-	err := req.svc.Call(req.mType, req.argv, req.reply)
-	if err != nil {
-		req.h.Error = err.Error()
-		s.sendResponse(code, req.h, invalidRequest, sending)
+	called := make(chan struct{})
+	sent := make(chan struct{})
+	go func() {
+		err := req.svc.Call(req.mType, req.argv, req.reply)
+		called <- struct{}{}
+		if err != nil {
+			req.h.Error = err.Error()
+			s.sendResponse(code, req.h, invalidRequest, sending)
+			sent <- struct{}{}
+			return
+		}
+		s.sendResponse(code, req.h, req.reply.Interface(), sending)
+		sent <- struct{}{}
+	}()
+	if timeout == 0 {
+		<-called
+		<-sent
+		return
 	}
-	s.sendResponse(code, req.h, req.reply.Interface(), sending)
-
+	select {
+	case <-time.After(timeout):
+		req.h.Error = fmt.Sprintf("[rpc server] request handle timeout:expect within %s", timeout)
+		s.sendResponse(code, req.h, invalidRequest, sending)
+	case <-called:
+		<-sent
+	}
 }
 func (s *Server) readRequestHeader(iCode irpc.ICode) (*irpc.Header, error) {
 	var h irpc.Header

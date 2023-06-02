@@ -177,7 +177,7 @@ func newClientCode(cc irpc.ICode, opt *diyrpc.Option) *Client {
 func newClient(conn net.Conn, opt *diyrpc.Option) (*Client, error) {
 	f := irpc.NewCodeFuncMap[opt.CodeType]
 	if f == nil {
-		err := fmt.Errorf("[Client] Invaild CodeType: ", opt.CodeType)
+		err := fmt.Errorf("[Client] Invaild CodeType: %s", opt.CodeType)
 		//log.Println(opt.CodeType)
 		log.Println("[Client] NewCodeFuncMap err:", err)
 		conn.Close()
@@ -270,7 +270,7 @@ func (c *Client) Call(ctx context.Context, serviceMethod string, args, reply int
 	select {
 	case <-ctx.Done():
 		c.removeCall(call.Seq)
-		return errors.New("[rpc client] call failed")
+		return errors.New("[rpc client] call failed:" + ctx.Err().Error())
 	case call := <-call.Done:
 		return call.Error
 	}
