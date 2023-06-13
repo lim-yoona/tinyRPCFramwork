@@ -10,9 +10,9 @@ TinyRPCFramwork is a simple RPC Framwork that could help developers build a dist
 - Client  
 - Server  
 - Code  
-- Service register  
+- Service register
+- Timeout Handling    
 
 ### TODO
-- Timeout Handling  
 - Load Balance  
 - Service discovery   
